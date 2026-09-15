@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чек-лист агента (Онлайн - Темная тема)</title>
+    <!-- Подключаем библиотеку Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary-bg: #0f172a;
+            --card-bg: #1e293b;
+            --header-bg: #020617;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --border-color: #334155;
+            --table-header-bg: #1e293b;
+            --hover-bg: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: var(--primary-bg);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card-bg);
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .app-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            background: #334155;
+            color: var(--text-muted);
+        }
+
+        .status-badge.online {
+            background: #064e3b;
+            color: #6ee7b7;
+        }
+
+        .actions-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background-color: var(--card-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        button:hover { background-color: var(--hover-bg); border-color: #64748b; }
+        button.btn-primary { background-color: var(--accent-color); color: white; border-color: var(--accent-color); }
+        button.btn-primary:hover { background-color: var(--accent-hover); }
+
+        .table-container {
+            flex: 1;
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            padding: 20px;
+            overflow-x: auto;
+            margin-bottom: 70px;
+            border: 1px solid var(--border-color);
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        th, td { border: 1px solid var(--border-color); padding: 10px; text-align: center; vertical-align: middle; }
+        th { background-color: var(--table-header-bg); font-weight: 600; font-size: 0.9rem; color: #e2e8f0; }
+        th.name-col-header { width: 160px; text-align: left; }
+
+        .agent-name-input {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-main);
+            padding: 6px 8px;
+            font-size: 0.95rem;
+            border-radius: 4px;
+            outline: none;
+        }
+        .agent-name-input:hover { background-color: #0f172a; border-color: var(--border-color); }
+        .agent-name-input:focus { background-color: #0f172a; border-color: var(--accent-color); }
+
+        .checkbox-cell { cursor: pointer; user-select: none; }
+        .checkbox-cell input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; accent-color: var(--accent-color); }
+
+        .bottom-tabs-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border-color);
+            padding: 10px 20px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 100;
+        }
+
+        .tabs-wrapper { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 10px; flex: 1; }
+        .tab-item {
+            padding: 8px 14px;
+            background: #0f172a;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            white-space: nowrap;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab-item.active { background: var(--accent-color); color: #ffffff; border-color: var(--accent-color); font-weight: 600; }
+        .tab-close-btn { display: inline-block; width: 16px; height: 16px; line-height: 14px; text-align: center; border-radius: 50%; font-size: 11px; }
+        .tab-item.active .tab-close-btn:hover { background: rgba(255, 255, 255, 0.3); }
+        .tab-item:not(.active) .tab-close-btn:hover { background: #334155; color: #fff; }
+
+        #fileInput { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="app-title">
+            📋 Чек-лист агента
+            <span id="statusBadge" class="status-badge">Загрузка...</span>
+        </div>
+        <div class="actions-group">
+            <button onclick="exportDatabase()">💾 Экспорт базы</button>
+            <button onclick="document.getElementById('fileInput').click()">📂 Импорт базы</button>
+            <input type="file" id="fileInput" accept=".json" onchange="importDatabase(event)">
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="name-col-header">Имя *</th>
+                    <th>Заполнена CRM</th>
+                    <th>Отработаны входящие</th>
+                    <th>Выполнены повторные</th>
+                    <th>Все задачи закрыты</th>
+                    <th>10 холодных</th>
+                    <th>Сегодня сделано всё, чтобы заработать завтра!</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+
+    <div class="bottom-tabs-bar">
+        <button class="btn-primary" onclick="addNewDayTab()">+ Новый день</button>
+        <div class="tabs-wrapper" id="tabsList"></div>
+    </div>
+
+    <script>
+        // === ВСТАВЛЕННЫЕ КЛЮЧИ SUPABASE ===
+        const SUPABASE_URL = 'https://mgrsdiwrgiiuqycalnhp.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_eUl60y9Xvyj95wDEs1BDqA_4CSot_3l';
+        // ============================================
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const ROW_COUNT = 13;
+        const COLUMNS = ['crm', 'incoming', 'repeat', 'tasks_closed', 'cold_calls', 'done_for_tomorrow'];
+
+        let appState = { activeTabId: null, days: {} };
+
+        window.onload = async function() {
+            await loadFromCloud();
+            setupRealtime();
+        };
+
+        async function loadFromCloud() {
+            try {
+                const { data, error } = await supabaseClient.from('checklist').select('data').eq('id', 'main_db').single();
+                if (data && data.data) {
+                    appState = data.data;
+                } else if (Object.keys(appState.days).length === 0) {
+                    addNewDayTab();
+                }
+                document.getElementById('statusBadge').textContent = 'Онлайн';
+                document.getElementById('statusBadge').classList.add('online');
+            } catch (e) {
+                console.error("Ошибка сети или инициализации", e);
+                document.getElementById('statusBadge').textContent = 'Офлайн';
+            }
+            renderApp();
+        }
+
+        async function saveToCloud() {
+            renderApp();
+            try {
+                await supabaseClient.from('checklist').upsert({ id: 'main_db', data: appState });
+            } catch (e) {
+                console.error("Ошибка сохранения в облако", e);
+            }
+        }
+
+        function setupRealtime() {
+            supabaseClient
+                .channel('public:checklist')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist' }, payload => {
+                    if (payload.new && payload.new.data) {
+                        appState = payload.new.data;
+                        renderApp();
+                    }
+                })
+                .subscribe();
+        }
+
+        function createEmptyDayData(dateString) {
+            const names = {};
+            for (let i = 1; i <= ROW_COUNT; i++) names[i] = `Имя ${i}`;
+            return { date: dateString, names: names, checks: {} };
+        }
+
+        // Парсинг даты из формата ДД.ММ.ГГГГ в объект Date
+        function parseDateString(dateStr) {
+            if (!dateStr) return new Date();
+            const parts = dateStr.split('.');
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                return new Date(year, month, day);
+            }
+            return new Date();
+        }
+
+        function addNewDayTab() {
+            let nextDate = new Date();
+            const dayIds = Object.keys(appState.days);
+
+            if (dayIds.length > 0) {
+                // Находим дату последней созданной вкладки и прибавляем +1 день
+                const lastTabId = dayIds[dayIds.length - 1];
+                const lastDateStr = appState.days[lastTabId].date;
+                const lastDate = parseDateString(lastDateStr);
+
+                lastDate.setDate(lastDate.getDate() + 1);
+                nextDate = lastDate;
+            }
+
+            const dateStr = nextDate.toLocaleDateString('ru-RU');
+            const tabId = 'day_' + Date.now();
+            
+            appState.days[tabId] = createEmptyDayData(dateStr);
+            appState.activeTabId = tabId;
+            saveToCloud();
+        }
+
+        function switchTab(tabId) {
+            appState.activeTabId = tabId;
+            saveToCloud();
+        }
+
+        function deleteTab(event, tabId) {
+            event.stopPropagation();
+            if (Object.keys(appState.days).length <= 1) return alert("Нельзя удалить единственную вкладку!");
+            if (confirm(`Удалить вкладку за ${appState.days[tabId].date}?`)) {
+                delete appState.days[tabId];
+                if (appState.activeTabId === tabId) appState.activeTabId = Object.keys(appState.days)[0];
+                saveToCloud();
+            }
+        }
+
+        function updateName(rowIndex, value) {
+            const activeDay = appState.days[appState.activeTabId];
+            if (activeDay) {
+                activeDay.names[rowIndex] = value;
+                saveToCloud();
+            }
+        }
+
+        function toggleCheckbox(rowIndex, colKey) {
+            const activeDay = appState.days[appState.activeTabId];
+            if (activeDay) {
+                const key = `${rowIndex}_${colKey}`;
+                activeDay.checks[key] = !activeDay.checks[key];
+                saveToCloud();
+            }
+        }
+
+        function renderApp() { renderTabs(); renderTable(); }
+
+        function renderTabs() {
+            const container = document.getElementById('tabsList');
+            container.innerHTML = '';
+            Object.keys(appState.days).forEach(tabId => {
+                const day = appState.days[tabId];
+                const tab = document.createElement('div');
+                tab.className = `tab-item ${tabId === appState.activeTabId ? 'active' : ''}`;
+                tab.onclick = () => switchTab(tabId);
+                tab.innerHTML = `<span>📅 ${day.date}</span><span class="tab-close-btn" onclick="deleteTab(event, '${tabId}')">✕</span>`;
+                container.appendChild(tab);
+            });
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            const activeDay = appState.days[appState.activeTabId];
+            if (!activeDay) return;
+
+            for (let i = 1; i <= ROW_COUNT; i++) {
+                const tr = document.createElement('tr');
+                const tdName = document.createElement('td');
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.className = 'agent-name-input';
+                nameInput.value = activeDay.names[i] || `Имя ${i}`;
+                nameInput.onchange = (e) => updateName(i, e.target.value);
+                tdName.appendChild(nameInput);
+                tr.appendChild(tdName);
+
+                COLUMNS.forEach(colKey => {
+                    const tdCheck = document.createElement('td');
+                    tdCheck.className = 'checkbox-cell';
+                    const checkKey = `${i}_${colKey}`;
+                    const isChecked = !!activeDay.checks[checkKey];
+                    tdCheck.onclick = () => toggleCheckbox(i, colKey);
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = isChecked;
+                    checkbox.onclick = (e) => { e.stopPropagation(); toggleCheckbox(i, colKey); };
+
+                    tdCheck.appendChild(checkbox);
+                    tr.appendChild(tdCheck);
+                });
+
+                tbody.appendChild(tr);
+            }
+        }
+
+        function exportDatabase() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState, null, 2));
+            const anchor = document.createElement('a');
+            anchor.setAttribute("href", dataStr);
+            anchor.setAttribute("download", `checklist_backup_${new Date().toISOString().slice(0, 10)}.json`);
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+        }
+
+        function importDatabase(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (importedData && importedData.days) {
+                        appState = importedData;
+                        await saveToCloud();
+                        alert('База импортирована!');
+                    }
+                } catch (err) { alert('Ошибка при чтении файла.'); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+    </script>
+</body>
+</html>
